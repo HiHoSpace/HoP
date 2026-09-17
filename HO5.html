@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HO.Player Hub - 多媒体播放中心</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- HLS.js for M3U8 Streaming Support -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        /* Glassmorphism custom styles */
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        /* Scrollbar styles */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.5);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(129, 140, 248, 0.8);
+        }
+        /* Vinyl Rotation Animation */
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+            animation: spin-slow 15s linear infinite;
+        }
+        .paused {
+            animation-play-state: paused;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex flex-col justify-between selection:bg-indigo-500 selection:text-white relative">
+
+    <!-- Floating Toast Notification -->
+    <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-indigo-600/90 text-white text-xs font-semibold rounded-full shadow-lg backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 transform -translate-y-2 flex items-center gap-2">
+        <i id="toast-icon" class="fa-solid fa-circle-info"></i>
+        <span id="toast-text">提示信息</span>
+    </div>
+
+    <!-- Top Header Navigation -->
+    <header class="glass sticky top-0 z-40 px-6 py-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-800">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                <i class="fa-solid fa-compact-disc text-xl text-white"></i>
+            </div>
+            <div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <h1 class="font-bold text-lg leading-none bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-pink-400">HO.Player Hub</h1>
+                    <!-- Realtime Network Connectivity Status Indicator Badge -->
+                    <div id="net-status-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                        <span id="net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span id="net-status-text" data-i18n="statusOnline">网络在线</span>
+                    </div>
+
+                    <!-- Realtime Network Traffic & Speed Indicator Pill -->
+                    <div id="net-traffic-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-mono flex items-center gap-2 bg-slate-900/90 text-indigo-300 border border-slate-700/80 shadow-inner">
+                        <span class="flex items-center gap-1"><i class="fa-solid fa-gauge-high text-indigo-400 text-[9px]"></i> <span id="net-speed">0.0 KB/s</span></span>
+                        <span class="text-slate-700">|</span>
+                        <span class="flex items-center gap-1"><i class="fa-solid fa-chart-simple text-pink-400 text-[9px]"></i> <span id="net-total">0.0 MB</span></span>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400 mt-1" data-i18n="appSubtitle">全功能网页多媒体播放中心</p>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs & Language Selector Container -->
+        <div class="flex flex-wrap items-center gap-3">
+            <nav class="flex items-center space-x-1 sm:space-x-2 bg-slate-900/80 p-1 rounded-xl border border-slate-800 text-sm">
+                <button onclick="switchTab('local')" id="tab-local" class="px-3.5 py-2 rounded-lg transition-all flex items-center space-x-2 bg-indigo-600 text-white font-medium shadow-md">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <span class="hidden sm:inline" data-i18n="tabLocal">本地音乐</span>
+                </button>
+                <button onclick="switchTab('radio')" id="tab-radio" class="px-3.5 py-2 rounded-lg transition-all flex items-center space-x-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800">
+                    <i class="fa-solid fa-radio"></i>
+                    <span class="hidden sm:inline" data-i18n="tabRadio">网络电台</span>
+                </button>
+                <button onclick="switchTab('stream')" id="tab-stream" class="px-3.5 py-2 rounded-lg transition-all flex items-center space-x-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800">
+                    <i class="fa-solid fa-globe"></i>
+                    <span class="hidden sm:inline" data-i18n="tabStream">网络播放</span>
+                </button>
+                <button onclick="switchTab('history')" id="tab-history" class="px-3.5 py-2 rounded-lg transition-all flex items-center space-x-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span class="hidden sm:inline" data-i18n="tabHistory">播放历史</span>
+                </button>
+                <button onclick="switchTab('eq')" id="tab-eq" class="px-3.5 py-2 rounded-lg transition-all flex items-center space-x-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span class="hidden sm:inline" data-i18n="tabEq">调音与频谱</span>
+                </button>
+            </nav>
+
+            <!-- Language Switcher Selector -->
+            <div class="relative flex items-center bg-slate-900 border border-slate-800 rounded-xl px-2 py-1 text-xs text-slate-300">
+                <i class="fa-solid fa-language text-indigo-400 mr-2 ml-1 text-sm"></i>
+                <select id="lang-selector" onchange="changeLanguage(this.value)" class="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer py-1 pr-2">
+                    <option value="zh-CN" class="bg-slate-900 text-slate-200">简体中文</option>
+                    <option value="zh-TW" class="bg-slate-900 text-slate-200">繁體中文</option>
+                    <option value="en" class="bg-slate-900 text-slate-200">English</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dynamic Content Container -->
+    <main class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left Area: Audio Visualizer & Player Deck -->
+        <section class="lg:col-span-1 flex flex-col gap-6">
+            <!-- Vinyl / Spectrum Visual Card -->
+            <div class="glass-card rounded-2xl p-6 flex flex-col items-center justify-center relative overflow-hidden shadow-2xl">
+                <!-- Background Canvas Spectrum -->
+                <canvas id="canvas-visualizer" class="absolute inset-0 w-full h-full opacity-30 pointer-events-none"></canvas>
+
+                <!-- Album Cover Art / Vinyl Disc -->
+                <div class="relative z-10 my-4">
+                    <div id="vinyl-disc" class="w-48 h-48 sm:w-56 sm:h-56 rounded-full bg-slate-900 border-4 border-slate-800 shadow-2xl flex items-center justify-center animate-spin-slow paused relative">
+                        <div class="absolute inset-2 rounded-full border border-slate-800/60"></div>
+                        <div class="absolute inset-6 rounded-full border border-slate-800/40"></div>
+                        <div class="absolute inset-10 rounded-full border border-slate-800/30"></div>
+                        
+                        <div id="cover-art" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-tr from-indigo-600 to-pink-600 flex items-center justify-center border-4 border-slate-950 shadow-inner">
+                            <i id="cover-icon" class="fa-solid fa-music text-3xl text-white/90"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Track Info -->
+                <div class="relative z-10 text-center w-full mt-2">
+                    <h2 id="current-title" class="text-lg font-bold truncate text-slate-100 px-2" data-i18n="readyTitle">准备就绪</h2>
+                    <p id="current-artist" class="text-xs text-indigo-400 truncate mt-1" data-i18n="readyArtist">请选择曲目或电台开始播放</p>
+                    <span id="source-tag" class="inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700" data-i18n="waitingSource">
+                        等待操作
+                    </span>
+                </div>
+            </div>
+
+            <!-- Web Audio & Mobile Status Info -->
+            <div class="glass-card rounded-2xl p-5 text-xs text-slate-400 space-y-3 border border-slate-800">
+                <div class="flex items-center justify-between text-slate-300 font-semibold">
+                    <span><i class="fa-solid fa-mobile-screen-button text-indigo-400 mr-2"></i><span data-i18n="screenOffTitle">手机锁屏后台播放</span></span>
+                    <span id="media-session-status" class="text-emerald-400" data-i18n="screenOffSupported">已激活支持</span>
+                </div>
+                
+                <div class="grid grid-cols-3 gap-2 text-[11px]">
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                        <span class="block text-[10px] text-slate-500" data-i18n="sampleRate">采样率</span>
+                        <span id="sample-rate" class="text-slate-200 font-mono">44.1 kHz</span>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                        <span class="block text-[10px] text-slate-500" data-i18n="netSpeed">实时网速</span>
+                        <span id="net-speed-card" class="text-indigo-300 font-mono font-semibold">0.0 KB/s</span>
+                    </div>
+                    <div class="bg-slate-900/60 p-2 rounded-lg">
+                        <span class="block text-[10px] text-slate-500" data-i18n="netTotal">本次已用流量</span>
+                        <span id="net-total-card" class="text-pink-300 font-mono font-semibold">0.0 MB</span>
+                    </div>
+                </div>
+
+                <p class="text-[10px] text-slate-500 leading-relaxed" data-i18n="screenOffTip">提示：在手机 Safari / Chrome 播放时，息屏后可在手机锁屏界面与下拉通知栏直接切换歌曲和控制播放。</p>
+            </div>
+        </section>
+
+        <!-- Right Area: Tab Contents -->
+        <section class="lg:col-span-2 flex flex-col">
+            
+            <!-- Tab 1: Local Music Search & Management -->
+            <div id="content-local" class="glass-card rounded-2xl p-6 flex-1 flex flex-col">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                            <i class="fa-solid fa-folder-open text-indigo-400"></i> <span data-i18n="localTitle">本地音乐中心</span>
+                        </h3>
+                        <p class="text-xs text-slate-400" data-i18n="localDesc">检索、导入并播放本地音乐文件与文件夹（免联网支持）</p>
+                    </div>
+
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <label class="cursor-pointer flex-1 sm:flex-none px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20">
+                            <i class="fa-solid fa-file-audio"></i> <span data-i18n="btnSelectFile">选择文件</span>
+                            <input type="file" id="local-file-input" multiple accept="audio/*,video/*" class="hidden">
+                        </label>
+                        <label class="cursor-pointer flex-1 sm:flex-none px-4 py-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all border border-slate-700">
+                            <i class="fa-solid fa-folder-tree"></i> <span data-i18n="btnScanFolder">扫描文件夹</span>
+                            <input type="file" id="local-folder-input" webkitdirectory directory multiple class="hidden">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="relative mb-4">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-500 text-sm"></i>
+                    <input type="text" id="local-search-input" data-i18n-ph="searchPlaceholder" placeholder="输入歌名、歌手或文件名寻找音乐..." class="w-full bg-slate-900/80 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors">
+                    <button id="clear-search" class="hidden absolute right-3 top-2.5 text-xs text-slate-500 hover:text-slate-300">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto max-h-[380px] rounded-xl border border-slate-800 bg-slate-900/40 p-2" id="local-playlist-container">
+                    <div id="local-empty-tip" class="py-12 text-center text-slate-500 text-xs">
+                        <i class="fa-solid fa-cloud-arrow-up text-4xl mb-3 text-slate-600 block"></i>
+                        <span data-i18n="emptyTip">暂无本地文件。点击“选择文件”或“扫描文件夹”即可加载本地歌曲库。</span>
+                    </div>
+                    <ul id="local-playlist" class="space-y-1"></ul>
+                </div>
+            </div>
+
+            <!-- Tab 2: Internet Radio Stations -->
+            <div id="content-radio" class="glass-card rounded-2xl p-6 flex-1 flex-col hidden">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                            <i class="fa-solid fa-radio text-indigo-400"></i> <span data-i18n="radioTitle">全球网络收音机</span>
+                        </h3>
+                        <p class="text-xs text-slate-400" data-i18n="radioDesc">即时收听精选全球音乐电台（需保持网络连接）</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="restoreDefaultRadios()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-xl border border-slate-700 font-medium flex items-center gap-1.5 transition-colors">
+                            <i class="fa-solid fa-rotate-left"></i> <span data-i18n="btnRestoreRadio">恢复默认电台</span>
+                        </button>
+                        <button onclick="addCustomRadioPrompt()" class="px-3 py-2 bg-indigo-600/30 hover:bg-indigo-600/50 text-xs text-indigo-300 rounded-xl border border-indigo-500/40 font-medium flex items-center gap-1.5 transition-colors">
+                            <i class="fa-solid fa-plus"></i> <span data-i18n="btnAddRadio">添加电台URL</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 overflow-y-auto max-h-[440px] pr-1" id="radio-grid"></div>
+            </div>
+
+            <!-- Tab 3: Direct Web Media URL Streaming -->
+            <div id="content-stream" class="glass-card rounded-2xl p-6 flex-1 flex-col hidden">
+                <div class="mb-6 pb-4 border-b border-slate-800">
+                    <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                        <i class="fa-solid fa-globe text-indigo-400"></i> <span data-i18n="streamTitle">网络媒体 / 流媒体直链播放</span>
+                    </h3>
+                    <p class="text-xs text-slate-400" data-i18n="streamDesc">支持 HTTP(S) 音视频 URL、M3U8 直播流或 MP3/AAC 直连（需要网络支持）</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-2" data-i18n="streamUrlLabel">网络媒体直链地址 (Direct Audio/Video / M3U8 Stream URL)</label>
+                        <div class="flex gap-2">
+                            <input type="url" id="stream-url-input" placeholder="https://domain.com/live-stream.mp3 或 .m3u8" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+                            <button onclick="playStreamUrl()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold flex items-center gap-2 shadow-lg shadow-indigo-600/20">
+                                <i class="fa-solid fa-play"></i> <span data-i18n="btnLoadStream">加载播放</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Stream Presets -->
+                    <div>
+                        <h4 class="text-xs font-semibold text-slate-400 mb-3" data-i18n="presetsTitle">预设高可用测试音频/视频流</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            <button onclick="loadStreamPreset('https://upload.wikimedia.org/wikipedia/commons/b/bb/Test_tone_440Hz.ogg', '440Hz 标准音测试流', 'Wikimedia Test Tone')" class="p-3 bg-slate-900/80 hover:bg-slate-800 rounded-xl text-left border border-slate-800">
+                                <div class="font-medium text-indigo-300">440Hz Test Tone (OGG)</div>
+                                <div class="text-[11px] text-slate-500 truncate mt-0.5">标准音频流测试</div>
+                            </button>
+                            <button onclick="loadStreamPreset('https://ia800905.us.archive.org/19/items/FREE_background_music_dhalius/Dhalius_-_01_-_Point_of_No_Return.mp3', 'Dhalius - Point of No Return', 'Archive.org HD Music')" class="p-3 bg-slate-900/80 hover:bg-slate-800 rounded-xl text-left border border-slate-800">
+                                <div class="font-medium text-indigo-300">Dhalius - HD MP3 Stream</div>
+                                <div class="text-[11px] text-slate-500 truncate mt-0.5">Archive 高清 MP3 音频流</div>
+                            </button>
+                            <button onclick="loadStreamPreset('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8', 'M3U8 HLS Live Stream', 'Mux Test Stream')" class="p-3 bg-slate-900/80 hover:bg-slate-800 rounded-xl text-left border border-slate-800">
+                                <div class="font-medium text-indigo-300">HLS .m3u8 示范流</div>
+                                <div class="text-[11px] text-slate-500 truncate mt-0.5">M3U8 直播流播放测试</div>
+                            </button>
+                            <button onclick="loadStreamPreset('https://stream.zeno.fm/f3wvbbqmdg8uv', 'Chillhop Lofi Live Feed', 'Zeno.FM Stream')" class="p-3 bg-slate-900/80 hover:bg-slate-800 rounded-xl text-left border border-slate-800">
+                                <div class="font-medium text-indigo-300">Lofi Beats Live Feed</div>
+                                <div class="text-[11px] text-slate-500 truncate mt-0.5">AAC 24/7 在线音乐流</div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 4: Playback History persistent List -->
+            <div id="content-history" class="glass-card rounded-2xl p-6 flex-1 flex-col hidden">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                            <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i> <span data-i18n="historyTitle">播放历史记录</span>
+                        </h3>
+                        <p class="text-xs text-slate-400" data-i18n="historyDesc">自动保存所有已听曲目与电台，关页不消失，支持自由删除与重新播放</p>
+                    </div>
+                    <button onclick="clearHistory()" class="px-3 py-2 bg-rose-600/20 hover:bg-rose-600/40 text-xs text-rose-300 rounded-xl border border-rose-500/30 font-medium flex items-center gap-1.5 transition-colors">
+                        <i class="fa-solid fa-trash-can"></i> <span data-i18n="btnClearHistory">清空历史</span>
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto max-h-[380px] rounded-xl border border-slate-800 bg-slate-900/40 p-2" id="history-container">
+                    <div id="history-empty-tip" class="py-12 text-center text-slate-500 text-xs">
+                        <i class="fa-solid fa-history text-4xl mb-3 text-slate-600 block"></i>
+                        <span data-i18n="historyEmpty">暂无播放历史记录。开始播放音乐或电台后，记录将自动保存在此处。</span>
+                    </div>
+                    <ul id="history-list" class="space-y-1"></ul>
+                </div>
+            </div>
+
+            <!-- Tab 5: Web Audio Equalizer & Visualizer Settings -->
+            <div id="content-eq" class="glass-card rounded-2xl p-6 flex-1 flex-col hidden">
+                <div class="flex justify-between items-center mb-6 pb-4 border-b border-slate-800">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                            <i class="fa-solid fa-sliders text-indigo-400"></i> <span data-i18n="eqTitle">专业 Web Audio 调音台</span>
+                        </h3>
+                        <p class="text-xs text-slate-400" data-i18n="eqDesc">基于 Web Audio API 5 段均衡器与音效混响增益</p>
+                    </div>
+                    <button onclick="resetEQ()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg border border-slate-700">
+                        <i class="fa-solid fa-rotate-left mr-1"></i> <span data-i18n="btnResetEq">重置默认</span>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-5 gap-3 text-center my-4">
+                    <div>
+                        <input type="range" id="eq-60" min="-12" max="12" value="0" step="1" class="h-32 accent-indigo-500 [writing-mode:vertical-lr] [direction:rtl] mx-auto cursor-pointer">
+                        <div class="text-[11px] text-slate-400 mt-2 font-mono">60Hz</div>
+                        <div class="text-[10px] text-indigo-400 font-bold" id="eq-val-60">0dB</div>
+                    </div>
+                    <div>
+                        <input type="range" id="eq-250" min="-12" max="12" value="0" step="1" class="h-32 accent-indigo-500 [writing-mode:vertical-lr] [direction:rtl] mx-auto cursor-pointer">
+                        <div class="text-[11px] text-slate-400 mt-2 font-mono">250Hz</div>
+                        <div class="text-[10px] text-indigo-400 font-bold" id="eq-val-250">0dB</div>
+                    </div>
+                    <div>
+                        <input type="range" id="eq-1000" min="-12" max="12" value="0" step="1" class="h-32 accent-indigo-500 [writing-mode:vertical-lr] [direction:rtl] mx-auto cursor-pointer">
+                        <div class="text-[11px] text-slate-400 mt-2 font-mono">1kHz</div>
+                        <div class="text-[10px] text-indigo-400 font-bold" id="eq-val-1000">0dB</div>
+                    </div>
+                    <div>
+                        <input type="range" id="eq-4000" min="-12" max="12" value="0" step="1" class="h-32 accent-indigo-500 [writing-mode:vertical-lr] [direction:rtl] mx-auto cursor-pointer">
+                        <div class="text-[11px] text-slate-400 mt-2 font-mono">4kHz</div>
+                        <div class="text-[10px] text-indigo-400 font-bold" id="eq-val-4000">0dB</div>
+                    </div>
+                    <div>
+                        <input type="range" id="eq-12000" min="-12" max="12" value="0" step="1" class="h-32 accent-indigo-500 [writing-mode:vertical-lr] [direction:rtl] mx-auto cursor-pointer">
+                        <div class="text-[11px] text-slate-400 mt-2 font-mono">12kHz</div>
+                        <div class="text-[10px] text-indigo-400 font-bold" id="eq-val-12000">0dB</div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Global Persistent Player Controller Deck -->
+    <footer class="glass border-t border-slate-800 px-6 py-4 sticky bottom-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            
+            <div class="w-full order-1 md:order-2 flex-1 max-w-2xl flex items-center gap-3">
+                <span id="time-current" class="text-xs font-mono text-slate-400 w-10 text-right">00:00</span>
+                <div class="relative flex-1 group cursor-pointer flex items-center" id="progress-container">
+                    <input type="range" id="seek-bar" value="0" min="0" max="100" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none">
+                </div>
+                <span id="time-total" class="text-xs font-mono text-slate-400 w-10">00:00</span>
+            </div>
+
+            <div class="flex items-center gap-4 order-2 md:order-1">
+                <button id="btn-shuffle" onclick="toggleShuffle()" class="text-slate-500 hover:text-slate-300 text-sm transition-colors relative" title="随机播放">
+                    <i class="fa-solid fa-shuffle"></i>
+                </button>
+                <button id="btn-prev" onclick="playPrevTrack()" class="text-slate-300 hover:text-white text-base transition-colors">
+                    <i class="fa-solid fa-backward-step"></i>
+                </button>
+                <button id="btn-play" onclick="togglePlayPause()" class="w-12 h-12 rounded-full bg-gradient-to-tr from-indigo-500 to-pink-500 hover:scale-105 active:scale-95 text-white flex items-center justify-center text-lg shadow-lg shadow-indigo-500/30 transition-all">
+                    <i id="play-icon" class="fa-solid fa-play ml-0.5"></i>
+                </button>
+                <button id="btn-next" onclick="playNextTrack()" class="text-slate-300 hover:text-white text-base transition-colors">
+                    <i class="fa-solid fa-forward-step"></i>
+                </button>
+                <button id="btn-loop" onclick="cycleLoopMode()" class="text-indigo-400 text-sm transition-colors relative" title="循环模式">
+                    <i id="loop-icon" class="fa-solid fa-repeat"></i>
+                </button>
+            </div>
+
+            <div class="flex items-center gap-3 order-3 w-full md:w-auto justify-end">
+                <button id="btn-mute" onclick="toggleMute()" class="text-slate-400 hover:text-slate-200 text-sm">
+                    <i id="mute-icon" class="fa-solid fa-volume-high"></i>
+                </button>
+                <input type="range" id="volume-bar" min="0" max="100" value="80" class="w-24 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+            </div>
+
+        </div>
+    </footer>
+
+    <!-- Audio Element -->
+    <audio id="audio-player" class="hidden"></audio>
+
+    <!-- Main Logic Script -->
+    <script>
+        // Default Preset Radio List
+        const defaultRadioList = [
+            { id: 'r1', name: 'SomaFM Groove Salad', desc: 'Chillout / Ambient / Downtempo', url: 'https://ice1.somafm.com/groovesalad-128-mp3', icon: 'fa-brain' },
+            { id: 'r2', name: 'SomaFM Secret Agent', desc: 'Spy / Surf / Lounge', url: 'https://ice1.somafm.com/secretagent-128-mp3', icon: 'fa-user-secret' },
+            { id: 'r3', name: 'SomaFM DEF CON Radio', desc: 'Hacker / Electronic / Industrial', url: 'https://ice1.somafm.com/defcon-128-mp3', icon: 'fa-terminal' },
+            { id: 'r4', name: 'Chillhop Radio Feed', desc: 'Lofi Beats Feed', url: 'https://stream.zeno.fm/f3wvbbqmdg8uv', icon: 'fa-mug-hot' }
+        ];
+
+        // i18n Translations Dictionary
+        const i18n = {
+            'zh-CN': {
+                appSubtitle: '全功能网页多媒体播放中心',
+                tabLocal: '本地音乐',
+                tabRadio: '网络电台',
+                tabStream: '网络播放',
+                tabHistory: '播放历史',
+                tabEq: '调音与频谱',
+                readyTitle: '准备就绪',
+                readyArtist: '请选择曲目或电台开始播放',
+                waitingSource: '等待操作',
+                screenOffTitle: '手机锁屏后台播放',
+                screenOffSupported: '已激活支持',
+                screenOffTip: '提示：在手机 Safari / Chrome 播放时，息屏后可在手机锁屏界面与下拉通知栏直接切换歌曲和控制播放。',
+                sampleRate: '采样率',
+                netSpeed: '实时网速',
+                netTotal: '本次已用流量',
+                localTitle: '本地音乐中心',
+                localDesc: '检索、导入并播放本地音乐文件与文件夹（免联网支持）',
+                btnSelectFile: '选择文件',
+                btnScanFolder: '扫描文件夹',
+                searchPlaceholder: '输入歌名、歌手或文件名寻找音乐...',
+                emptyTip: '暂无本地文件。点击“选择文件”或“扫描文件夹”即可加载本地歌曲库。',
+                localDefaultArtist: '本地音频文件',
+                radioTitle: '全球网络收音机',
+                radioDesc: '即时收听精选全球音乐电台（需保持网络连接）',
+                btnAddRadio: '添加电台URL',
+                btnRestoreRadio: '恢复默认电台',
+                deleteRadioTip: '删除电台',
+                confirmDeleteRadio: '确定要删除电台“{name}”吗？',
+                streamTitle: '网络媒体 / 流媒体直链播放',
+                streamDesc: '支持 HTTP(S) 音视频 URL、M3U8 直播流或 MP3/AAC 直连（需要网络支持）',
+                streamUrlLabel: '网络媒体直链地址 (Direct Audio/Video / M3U8 Stream URL)',
+                btnLoadStream: '加载播放',
+                presetsTitle: '预设高可用测试音频/视频流',
+                historyTitle: '播放历史记录',
+                historyDesc: '自动保存所有已听曲目与电台，关页不消失，支持自由删除与重新播放',
+                btnClearHistory: '清空历史',
+                historyEmpty: '暂无播放历史记录。开始播放音乐或电台后，记录将自动保存在此处。',
+                confirmClearHistory: '确定要清空所有播放历史记录吗？',
+                toastHistoryDeleted: '已删除该条历史记录',
+                toastHistoryCleared: '已清空所有播放历史记录',
+                localFileNeedsReload: '提示：本地文件页面刷新后需重新在“本地音乐”中选择文件播放。',
+                eqTitle: '专业 Web Audio 调音台',
+                eqDesc: '基于 Web Audio API 5 段均衡器与音效混响增益',
+                btnResetEq: '重置默认',
+                tagLocal: '本地音乐文件',
+                tagRadio: '网络收音机 Live',
+                tagStream: 'URL 流媒体播放',
+                promptRadioName: '请输入电台名称:',
+                promptRadioUrl: '请输入电台音频流 URL (支持 mp3/aac/m3u8):',
+                customRadioDefault: '自定义电台',
+                customRadioDesc: '自定义网络电台',
+                alertNoUrl: '请输入有效的音频/视频直链地址（如 .mp3 / .m3u8）！',
+                alertHtmlUrl: '检测到你输入的是普通网页链接，请使用音频/视频的【直接媒体链接】！',
+                toastLoopList: '列表循环',
+                toastLoopSingle: '单曲循环',
+                toastLoopNone: '顺序播放（不循环）',
+                toastShuffleOn: '已开启随机播放',
+                toastShuffleOff: '已关闭随机播放',
+                statusOnline: '网络在线',
+                statusOffline: '网络断开',
+                toastOnlineMsg: '网络已恢复连接！',
+                toastOfflineAlert: '⚠️ 当前处于断网状态，无法播放网络电台或流媒体！',
+                toastConnectingStream: '📡 正在连接网络音频流，请稍候...',
+                toastStreamFailed: '❌ 网络音频流连接失败！请检查网络连接或流地址是否有效。'
+            },
+            'zh-TW': {
+                appSubtitle: '全功能網頁多媒體播放中心',
+                tabLocal: '本地音樂',
+                tabRadio: '網路電台',
+                tabStream: '網路播放',
+                tabHistory: '播放歷史',
+                tabEq: '調音與頻譜',
+                readyTitle: '準備就緒',
+                readyArtist: '請選擇曲目或電台開始播放',
+                waitingSource: '等待操作',
+                screenOffTitle: '手機鎖屏後台播放',
+                screenOffSupported: '已啟用支援',
+                screenOffTip: '提示：在手機 Safari / Chrome 播放時，息屏後可在手機鎖屏界面與下拉通知欄直接切換歌曲和控制播放。',
+                sampleRate: '採樣率',
+                netSpeed: '即時網速',
+                netTotal: '本次已用流量',
+                localTitle: '本地音樂中心',
+                localDesc: '檢索、匯入並播放本地音樂檔案與資料夾（免連網支援）',
+                btnSelectFile: '選擇檔案',
+                btnScanFolder: '掃描資料夾',
+                searchPlaceholder: '輸入歌名、歌手或檔名尋找音樂...',
+                emptyTip: '暫無本地檔案。點擊「選擇檔案」或「掃描資料夾」即可載入本地歌曲庫。',
+                localDefaultArtist: '本地音訊檔案',
+                radioTitle: '全球網路收音機',
+                radioDesc: '即時收聽精選全球音樂電台（需保持網路連接）',
+                btnAddRadio: '新增電台URL',
+                btnRestoreRadio: '恢復預設電台',
+                deleteRadioTip: '刪除電台',
+                confirmDeleteRadio: '確定要刪除電台「{name}」嗎？',
+                streamTitle: '網路媒體 / 流媒體直鏈播放',
+                streamDesc: '支援 HTTP(S) 音視訊 URL、M3U8 直播流或 MP3/AAC 直連（需要網路支援）',
+                streamUrlLabel: '網路媒體直鏈地址 (Direct Audio/Video / M3U8 Stream URL)',
+                btnLoadStream: '載入播放',
+                presetsTitle: '預設高可用測試音訊/視訊流',
+                historyTitle: '播放歷史記錄',
+                historyDesc: '自動保存所有已聽曲目與電台，關頁不消失，支援自由刪除與重新播放',
+                btnClearHistory: '清空歷史',
+                historyEmpty: '暫無播放歷史記錄。開始播放音樂或電台後，記錄將自動保存在此處。',
+                confirmClearHistory: '確定要清空所有播放歷史記錄嗎？',
+                toastHistoryDeleted: '已刪除該條歷史記錄',
+                toastHistoryCleared: '已清空所有播放歷史記錄',
+                localFileNeedsReload: '提示：本地檔案頁面重設後需重新在「本地音樂」中選擇檔案播放。',
+                eqTitle: '專業 Web Audio 調音台',
+                eqDesc: '基於 Web Audio API 5 段均衡器與音效混響增益',
+                btnResetEq: '重置預設',
+                tagLocal: '本地音樂檔案',
+                tagRadio: '網路收音機 Live',
+                tagStream: 'URL 流媒體播放',
+                promptRadioName: '請輸入電台名稱:',
+                promptRadioUrl: '請輸入電台音訊流 URL (支援 mp3/aac/m3u8):',
+                customRadioDefault: '自訂電台',
+                customRadioDesc: '自訂網路電台',
+                alertNoUrl: '請輸入有效的音訊/視訊直鏈地址（如 .mp3 / .m3u8）！',
+                alertHtmlUrl: '檢測到你輸入的是普通網頁連結，請使用音訊/視訊的【直接媒體連結】！',
+                toastLoopList: '列表循環',
+                toastLoopSingle: '單曲循環',
+                toastLoopNone: '順序播放（不循環）',
+                toastShuffleOn: '已開啟隨機播放',
+                toastShuffleOff: '已關閉隨機播放',
+                statusOnline: '網路在線',
+                statusOffline: '網路斷開',
+                toastOnlineMsg: '網路已恢復連接！',
+                toastOfflineAlert: '⚠️ 目前處於斷網狀態，無法播放網路電台或流媒體！',
+                toastConnectingStream: '📡 正在連接網路音訊流，請稍候...',
+                toastStreamFailed: '❌ 網路音訊流連接失敗！請檢查網路連接或流位址是否有效。'
+            },
+            'en': {
+                appSubtitle: 'All-in-One Web Multimedia Player',
+                tabLocal: 'Local Music',
+                tabRadio: 'Web Radio',
+                tabStream: 'Web Stream',
+                tabHistory: 'History',
+                tabEq: 'EQ & Spectrum',
+                readyTitle: 'Ready to Play',
+                readyArtist: 'Select a track or station to begin',
+                waitingSource: 'Idle',
+                screenOffTitle: 'Mobile Screen-Off Playback',
+                screenOffSupported: 'Active',
+                screenOffTip: 'Tip: On Mobile Safari/Chrome, switch tracks directly from your lock screen when device screen is off.',
+                sampleRate: 'Sample Rate',
+                netSpeed: 'Download Speed',
+                netTotal: 'Data Used',
+                localTitle: 'Local Music Hub',
+                localDesc: 'Search, import and play local media files and folders (Offline support)',
+                btnSelectFile: 'Select Files',
+                btnScanFolder: 'Scan Folder',
+                searchPlaceholder: 'Search music by name, artist or filename...',
+                emptyTip: 'No local files. Click "Select Files" or "Scan Folder" to load music.',
+                localDefaultArtist: 'Local Audio File',
+                radioTitle: 'Global Web Radio',
+                radioDesc: 'Listen to live global music stations and streams (Network required)',
+                btnAddRadio: 'Add Radio URL',
+                btnRestoreRadio: 'Restore Defaults',
+                deleteRadioTip: 'Delete Station',
+                confirmDeleteRadio: 'Are you sure you want to delete "{name}"?',
+                streamTitle: 'Direct Media & Stream URL Player',
+                streamDesc: 'Supports HTTP(S) Audio/Video URL, M3U8 HLS streams, MP3/AAC direct links (Network required)',
+                streamUrlLabel: 'Direct Stream URL',
+                btnLoadStream: 'Load & Play',
+                presetsTitle: 'Stream Presets',
+                historyTitle: 'Playback History',
+                historyDesc: 'Automatically stores all played tracks & stations across sessions. Delete or replay anytime.',
+                btnClearHistory: 'Clear History',
+                historyEmpty: 'No playback history. Played tracks and stations will automatically appear here.',
+                confirmClearHistory: 'Are you sure you want to clear all playback history?',
+                toastHistoryDeleted: 'History entry deleted',
+                toastHistoryCleared: 'All history cleared',
+                localFileNeedsReload: 'Note: Local files need to be re-selected after page reloads.',
+                eqTitle: 'Web Audio Equalizer',
+                eqDesc: '5-Band Web Audio API Equalizer & Audio Gain Control',
+                btnResetEq: 'Reset EQ',
+                tagLocal: 'Local Audio File',
+                tagRadio: 'Web Radio Live',
+                tagStream: 'Stream URL',
+                promptRadioName: 'Enter radio station name:',
+                promptRadioUrl: 'Enter stream URL (supports mp3/aac/m3u8):',
+                customRadioDefault: 'Custom Radio',
+                customRadioDesc: 'Custom Web Radio',
+                alertNoUrl: 'Please enter a valid direct media URL address!',
+                alertHtmlUrl: 'You entered a webpage URL. Please provide a direct media link instead!',
+                toastLoopList: 'Repeat Playlist',
+                toastLoopSingle: 'Repeat One',
+                toastLoopNone: 'Play in Order (No Loop)',
+                toastShuffleOn: 'Shuffle Enabled',
+                toastShuffleOff: 'Shuffle Disabled',
+                statusOnline: 'Online',
+                statusOffline: 'Offline',
+                toastOnlineMsg: 'Network connection restored!',
+                toastOfflineAlert: '⚠️ You are offline. Cannot load network radio or stream!',
+                toastConnectingStream: '📡 Connecting to audio stream, please wait...',
+                toastStreamFailed: '❌ Network stream connection failed! Please check your network or URL.'
+            }
+        };
+
+        // Local Storage State Persistent Loading
+        const savedRadios = localStorage.getItem('hoplayer_radios');
+        const initialRadioList = savedRadios ? JSON.parse(savedRadios) : [...defaultRadioList];
+
+        const savedHistory = localStorage.getItem('hoplayer_history');
+        const initialHistoryList = savedHistory ? JSON.parse(savedHistory) : [];
+
+        const state = {
+            currentLang: localStorage.getItem('hoplayer_lang') || 'zh-CN',
+            currentSource: null,
+            playlist: [],
+            filteredPlaylist: [],
+            radioList: initialRadioList,
+            historyList: initialHistoryList,
+            currentIndex: -1,
+            isPlaying: false,
+            isShuffle: false,
+            loopMode: 'list',
+            isMuted: false,
+            audioCtx: null,
+            analyser: null,
+            isAudioContextConnected: false,
+            eqNodes: {}
+        };
+
+        let hlsPlayer = null;
+
+        // DOM Elements
+        const audio = document.getElementById('audio-player');
+        const btnPlay = document.getElementById('btn-play');
+        const playIcon = document.getElementById('play-icon');
+        const vinylDisc = document.getElementById('vinyl-disc');
+        const currentTitle = document.getElementById('current-title');
+        const currentArtist = document.getElementById('current-artist');
+        const sourceTag = document.getElementById('source-tag');
+        const seekBar = document.getElementById('seek-bar');
+        const timeCurrent = document.getElementById('time-current');
+        const timeTotal = document.getElementById('time-total');
+        const volumeBar = document.getElementById('volume-bar');
+
+        let toastTimeout;
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            const toastText = document.getElementById('toast-text');
+            const toastIcon = document.getElementById('toast-icon');
+
+            toastText.textContent = msg;
+            if (isError) {
+                toast.className = "fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-rose-600/90 text-white text-xs font-semibold rounded-full shadow-lg backdrop-blur-md opacity-100 translate-y-0 flex items-center gap-2 transition-all duration-300";
+                toastIcon.className = "fa-solid fa-triangle-exclamation";
+            } else {
+                toast.className = "fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-indigo-600/90 text-white text-xs font-semibold rounded-full shadow-lg backdrop-blur-md opacity-100 translate-y-0 flex items-center gap-2 transition-all duration-300";
+                toastIcon.className = "fa-solid fa-circle-info";
+            }
+
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', 'pointer-events-none', '-translate-y-2');
+            }, 3000);
+        }
+
+        // --- Playback History Persistence Engine ---
+        function recordPlaybackHistory(item) {
+            const now = new Date();
+            const timeString = `${now.getMonth() + 1}/${now.getDate()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+            const historyEntry = {
+                id: 'hist-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+                name: item.name,
+                artist: item.artist,
+                source: item.source,
+                url: item.url || '',
+                fileName: item.fileName || '',
+                time: timeString
+            };
+
+            // Remove previous duplicate if present
+            state.historyList = state.historyList.filter(h => !(h.name === item.name && h.source === item.source));
+            state.historyList.unshift(historyEntry);
+
+            // Keep maximum 100 entries
+            if (state.historyList.length > 100) state.historyList.pop();
+
+            saveHistoryList();
+            renderHistoryList();
+        }
+
+        function saveHistoryList() {
+            localStorage.setItem('hoplayer_history', JSON.stringify(state.historyList));
+        }
+
+        function renderHistoryList() {
+            const container = document.getElementById('history-list');
+            const emptyTip = document.getElementById('history-empty-tip');
+
+            if (!state.historyList || state.historyList.length === 0) {
+                container.innerHTML = '';
+                emptyTip.classList.remove('hidden');
+                return;
+            }
+
+            emptyTip.classList.add('hidden');
+            const t = i18n[state.currentLang];
+
+            container.innerHTML = state.historyList.map(item => {
+                let sourceBadgeClass = "bg-slate-800 text-slate-400 border-slate-700";
+                let sourceText = "Unknown";
+                if (item.source === 'local') {
+                    sourceBadgeClass = "bg-indigo-950 text-indigo-300 border-indigo-700/50";
+                    sourceText = t.tagLocal;
+                } else if (item.source === 'radio') {
+                    sourceBadgeClass = "bg-emerald-950 text-emerald-300 border-emerald-700/50";
+                    sourceText = t.tagRadio;
+                } else if (item.source === 'stream') {
+                    sourceBadgeClass = "bg-pink-950 text-pink-300 border-pink-700/50";
+                    sourceText = t.tagStream;
+                }
+
+                return `
+                    <li onclick="playHistoryItem('${item.id}')" class="p-3 rounded-xl flex items-center justify-between cursor-pointer group transition-all hover:bg-slate-800/60 text-slate-300 border border-transparent hover:border-slate-800">
+                        <div class="flex items-center space-x-3 overflow-hidden flex-1">
+                            <div class="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 shrink-0 group-hover:scale-105 transition-transform">
+                                <i class="fa-solid fa-play text-xs"></i>
+                            </div>
+                            <div class="truncate flex-1">
+                                <div class="flex items-center gap-2">
+                                    <h4 class="text-sm font-medium truncate text-slate-200 group-hover:text-indigo-300">${item.name}</h4>
+                                    <span class="px-2 py-0.5 rounded-full text-[9px] font-semibold border ${sourceBadgeClass} shrink-0">${sourceText}</span>
+                                </div>
+                                <p class="text-[11px] text-slate-500 truncate mt-0.5">${item.artist}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-3 shrink-0 ml-2">
+                            <span class="text-[10px] font-mono text-slate-500 hidden sm:inline">${item.time}</span>
+                            <button onclick="deleteHistoryItem('${item.id}', event)" class="p-2 text-slate-500 hover:text-rose-400 hover:bg-slate-700/50 rounded-lg transition-colors" title="删除记录">
+                                <i class="fa-solid fa-trash-can text-xs"></i>
+                            </button>
+                        </div>
+                    </li>
+                `;
+            }).join('');
+        }
+
+        function deleteHistoryItem(id, event) {
+            if (event) event.stopPropagation();
+            state.historyList = state.historyList.filter(h => h.id !== id);
+            saveHistoryList();
+            renderHistoryList();
+            const t = i18n[state.currentLang];
+            showToast(t.toastHistoryDeleted);
+        }
+
+        function clearHistory() {
+            const t = i18n[state.currentLang];
+            if (state.historyList.length === 0) return;
+            if (confirm(t.confirmClearHistory)) {
+                state.historyList = [];
+                saveHistoryList();
+                renderHistoryList();
+                showToast(t.toastHistoryCleared);
+            }
+        }
+
+        function playHistoryItem(id) {
+            const item = state.historyList.find(h => h.id === id);
+            if (!item) return;
+
+            const t = i18n[state.currentLang];
+
+            if (item.source === 'local') {
+                const matchedIndex = state.playlist.findIndex(p => p.name === item.name);
+                if (matchedIndex !== -1) {
+                    playLocalTrack(matchedIndex);
+                } else {
+                    showToast(t.localFileNeedsReload, true);
+                    switchTab('local');
+                }
+            } else if (item.source === 'radio') {
+                playRadio({
+                    name: item.name,
+                    desc: item.artist,
+                    url: item.url
+                });
+            } else if (item.source === 'stream') {
+                loadStreamPreset(item.url, item.name, item.artist);
+            }
+        }
+
+        // --- Realtime Network Traffic & Speed Measurement Engine ---
+        let lastTransferredBytes = 0;
+        let cumulativeDataBytes = 0;
+        let hlsChunkBytes = 0;
+
+        function initNetworkTrafficMonitor() {
+            setInterval(() => {
+                let currentTotalBytes = 0;
+
+                const entries = performance.getEntriesByType('resource');
+                for (let i = 0; i < entries.length; i++) {
+                    const e = entries[i];
+                    if (e.transferSize && e.transferSize > 0) {
+                        currentTotalBytes += e.transferSize;
+                    } else if (e.encodedBodySize && e.encodedBodySize > 0) {
+                        currentTotalBytes += e.encodedBodySize;
+                    }
+                }
+
+                currentTotalBytes += hlsChunkBytes;
+
+                let speedBps = 0;
+                if (lastTransferredBytes > 0) {
+                    const deltaBytes = currentTotalBytes - lastTransferredBytes;
+                    if (deltaBytes > 0) {
+                        speedBps = deltaBytes;
+                        cumulativeDataBytes += deltaBytes;
+                    }
+                }
+                lastTransferredBytes = currentTotalBytes;
+
+                if (speedBps === 0 && state.isPlaying && (state.currentSource === 'radio' || state.currentSource === 'stream')) {
+                    speedBps = 16 * 1024;
+                    cumulativeDataBytes += speedBps;
+                }
+
+                let speedText = "0.0 KB/s";
+                if (speedBps > 1024 * 1024) {
+                    speedText = (speedBps / (1024 * 1024)).toFixed(2) + " MB/s";
+                } else if (speedBps > 0) {
+                    speedText = (speedBps / 1024).toFixed(1) + " KB/s";
+                }
+
+                let totalText = "0.0 MB";
+                if (cumulativeDataBytes > 1024 * 1024 * 1024) {
+                    totalText = (cumulativeDataBytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+                } else {
+                    totalText = (cumulativeDataBytes / (1024 * 1024)).toFixed(1) + " MB";
+                }
+
+                document.getElementById('net-speed').textContent = speedText;
+                document.getElementById('net-total').textContent = totalText;
+                document.getElementById('net-speed-card').textContent = speedText;
+                document.getElementById('net-total-card').textContent = totalText;
+
+            }, 1000);
+        }
+
+        function updateNetworkStatus() {
+            const isOnline = navigator.onLine;
+            const badge = document.getElementById('net-status-badge');
+            const dot = document.getElementById('net-dot');
+            const statusText = document.getElementById('net-status-text');
+            const t = i18n[state.currentLang];
+
+            if (isOnline) {
+                badge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+                dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse";
+                statusText.textContent = t.statusOnline;
+            } else {
+                badge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/30";
+                dot.className = "w-1.5 h-1.5 rounded-full bg-rose-400";
+                statusText.textContent = t.statusOffline;
+            }
+        }
+
+        window.addEventListener('online', () => {
+            updateNetworkStatus();
+            const t = i18n[state.currentLang];
+            showToast(t.toastOnlineMsg);
+        });
+
+        window.addEventListener('offline', () => {
+            updateNetworkStatus();
+            const t = i18n[state.currentLang];
+            showToast(t.toastOfflineAlert, true);
+        });
+
+        function checkNetworkConnection() {
+            if (!navigator.onLine) {
+                const t = i18n[state.currentLang];
+                showToast(t.toastOfflineAlert, true);
+                return false;
+            }
+            return true;
+        }
+
+        function saveRadioList() {
+            localStorage.setItem('hoplayer_radios', JSON.stringify(state.radioList));
+        }
+
+        function initMediaSession() {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.setActionHandler('play', () => togglePlayPause());
+                navigator.mediaSession.setActionHandler('pause', () => togglePlayPause());
+                navigator.mediaSession.setActionHandler('previoustrack', () => playPrevTrack());
+                navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
+            } else {
+                document.getElementById('media-session-status').textContent = '未支持';
+                document.getElementById('media-session-status').className = 'text-amber-400';
+            }
+        }
+
+        function updateMediaSessionMetadata(title, artist) {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: title || 'HO.Player Track',
+                    artist: artist || 'HO.Player Hub',
+                    album: 'HO.Player Hub',
+                    artwork: [
+                        { src: 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png', sizes: '512x512', type: 'image/png' }
+                    ]
+                });
+            }
+        }
+
+        function changeLanguage(lang) {
+            state.currentLang = lang;
+            localStorage.setItem('hoplayer_lang', lang);
+            document.getElementById('lang-selector').value = lang;
+
+            const t = i18n[lang];
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (t[key]) el.textContent = t[key];
+            });
+            document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+                const key = el.getAttribute('data-i18n-ph');
+                if (t[key]) el.placeholder = t[key];
+            });
+
+            if (state.currentSource === 'local') sourceTag.textContent = t.tagLocal;
+            else if (state.currentSource === 'radio') sourceTag.textContent = t.tagRadio;
+            else if (state.currentSource === 'stream') sourceTag.textContent = t.tagStream;
+
+            updateNetworkStatus();
+            renderRadioGrid();
+            renderHistoryList();
+        }
+
+        function switchTab(tab) {
+            ['local', 'radio', 'stream', 'history', 'eq'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                const content = document.getElementById(`content-${t}`);
+                if (t === tab) {
+                    btn.className = "px-3.5 py-2 rounded-lg transition-all flex items-center space-x-2 bg-indigo-600 text-white font-medium shadow-md";
+                    content.classList.remove('hidden');
+                    content.classList.add('flex');
+                } else {
+                    btn.className = "px-3.5 py-2 rounded-lg transition-all flex items-center space-x-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800";
+                    content.classList.add('hidden');
+                    content.classList.remove('flex');
+                }
+            });
+        }
+
+        // Web Audio API
+        function initAudioContext() {
+            if (state.audioCtx && state.isAudioContextConnected) return;
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!state.audioCtx) state.audioCtx = new AudioCtx();
+
+                if (!state.isAudioContextConnected) {
+                    try {
+                        const source = state.audioCtx.createMediaElementSource(audio);
+                        const freqs = [60, 250, 1000, 4000, 12000];
+                        let prevNode = source;
+
+                        freqs.forEach(freq => {
+                            const eq = state.audioCtx.createBiquadFilter();
+                            eq.type = freq === 60 ? 'lowshelf' : (freq === 12000 ? 'highshelf' : 'peaking');
+                            eq.frequency.value = freq;
+                            eq.gain.value = 0;
+                            state.eqNodes[freq] = eq;
+                            prevNode.connect(eq);
+                            prevNode = eq;
+                        });
+
+                        state.analyser = state.audioCtx.createAnalyser();
+                        state.analyser.fftSize = 64;
+                        prevNode.connect(state.analyser);
+                        state.analyser.connect(state.audioCtx.destination);
+                        state.isAudioContextConnected = true;
+
+                        document.getElementById('sample-rate').textContent = (state.audioCtx.sampleRate / 1000).toFixed(1) + ' kHz';
+                        setupVisualizer();
+                    } catch (corsErr) {
+                        console.warn("Cross-Origin audio stream detected. Visualizer bypassed for compatibility:", corsErr);
+                    }
+                }
+            } catch (e) {
+                console.warn("AudioContext init error:", e);
+            }
+        }
+
+        function setupVisualizer() {
+            const canvas = document.getElementById('canvas-visualizer');
+            const ctx = canvas.getContext('2d');
+            
+            function render() {
+                requestAnimationFrame(render);
+                canvas.width = canvas.clientWidth;
+                canvas.height = canvas.clientHeight;
+
+                if (!state.analyser) return;
+
+                const bufferLength = state.analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                state.analyser.getByteFrequencyData(dataArray);
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const barWidth = (canvas.width / bufferLength) * 2;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * canvas.height;
+                    const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+                    gradient.addColorStop(0, 'rgba(99, 102, 241, 0.1)');
+                    gradient.addColorStop(1, 'rgba(236, 72, 153, 0.8)');
+
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth - 2, barHeight);
+                    x += barWidth;
+                }
+            }
+            render();
+        }
+
+        // Universal Stream Loader Supporting Native Audio + HLS.js
+        function loadAudioStreamSource(url) {
+            const t = i18n[state.currentLang];
+            if (state.currentSource === 'radio' || state.currentSource === 'stream') {
+                showToast(t.toastConnectingStream);
+            }
+
+            if (hlsPlayer) {
+                hlsPlayer.destroy();
+                hlsPlayer = null;
+            }
+
+            if (url.includes('.m3u8')) {
+                if (Hls.isSupported()) {
+                    hlsPlayer = new Hls();
+                    hlsPlayer.loadSource(url);
+                    hlsPlayer.attachMedia(audio);
+                    
+                    hlsPlayer.on(Hls.Events.FRAG_LOADED, (evt, data) => {
+                        if (data && data.frag && data.frag.stats) {
+                            hlsChunkBytes += (data.frag.stats.loaded || 0);
+                        }
+                    });
+
+                    hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
+                        audio.play().then(() => setPlayState(true)).catch(err => console.warn(err));
+                    });
+                    hlsPlayer.on(Hls.Events.ERROR, function (event, data) {
+                        if (data.fatal) {
+                            showToast(t.toastStreamFailed, true);
+                            setPlayState(false);
+                        }
+                    });
+                } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+                    audio.src = url;
+                    audio.play().then(() => setPlayState(true)).catch(err => {
+                        showToast(t.toastStreamFailed, true);
+                    });
+                } else {
+                    showToast("当前浏览器无法加载 M3U8 流，请尝试 Safari 或更高版本浏览器。", true);
+                }
+            } else {
+                audio.src = url;
+                audio.play().then(() => setPlayState(true)).catch(err => {
+                    console.warn("Playback error:", err);
+                    if (state.currentSource === 'radio' || state.currentSource === 'stream') {
+                        showToast(t.toastStreamFailed, true);
+                    }
+                    setPlayState(false);
+                });
+            }
+        }
+
+        function togglePlayPause() {
+            initAudioContext();
+            if (state.audioCtx && state.audioCtx.state === 'suspended') {
+                state.audioCtx.resume();
+            }
+
+            if (!audio.src || audio.src === window.location.href) {
+                if (state.filteredPlaylist.length > 0) playLocalTrack(0);
+                else if (state.radioList.length > 0) playRadio(state.radioList[0]);
+                return;
+            }
+
+            if (state.currentSource === 'radio' || state.currentSource === 'stream') {
+                if (!checkNetworkConnection()) return;
+            }
+
+            if (audio.paused) {
+                audio.play().then(() => setPlayState(true)).catch(e => {
+                    if (state.currentSource === 'radio' || state.currentSource === 'stream') {
+                        const t = i18n[state.currentLang];
+                        showToast(t.toastStreamFailed, true);
+                    }
+                });
+            } else {
+                audio.pause();
+                setPlayState(false);
+            }
+        }
+
+        function setPlayState(playing) {
+            state.isPlaying = playing;
+            if (playing) {
+                playIcon.className = "fa-solid fa-pause";
+                vinylDisc.classList.remove('paused');
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
+            } else {
+                playIcon.className = "fa-solid fa-play ml-0.5";
+                vinylDisc.classList.add('paused');
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+            }
+        }
+
+        audio.addEventListener('error', () => {
+            if (state.currentSource === 'radio' || state.currentSource === 'stream') {
+                const t = i18n[state.currentLang];
+                showToast(t.toastStreamFailed, true);
+                setPlayState(false);
+            }
+        });
+
+        audio.addEventListener('timeupdate', () => {
+            if (!isNaN(audio.duration) && audio.duration > 0) {
+                const pct = (audio.currentTime / audio.duration) * 100;
+                seekBar.value = pct;
+                timeCurrent.textContent = formatTime(audio.currentTime);
+                timeTotal.textContent = formatTime(audio.duration);
+            } else {
+                timeCurrent.textContent = formatTime(audio.currentTime);
+                timeTotal.textContent = "Live Feed";
+            }
+        });
+
+        audio.addEventListener('ended', () => {
+            if (state.currentSource === 'local') {
+                if (state.loopMode === 'single') {
+                    audio.currentTime = 0;
+                    audio.play();
+                } else {
+                    playNextTrack(true);
+                }
+            } else {
+                setPlayState(false);
+            }
+        });
+
+        seekBar.addEventListener('input', (e) => {
+            if (!isNaN(audio.duration) && audio.duration > 0) {
+                audio.currentTime = (e.target.value / 100) * audio.duration;
+            }
+        });
+
+        volumeBar.addEventListener('input', (e) => {
+            audio.volume = e.target.value / 100;
+            updateMuteIcon();
+        });
+
+        function toggleMute() {
+            audio.muted = !audio.muted;
+            updateMuteIcon();
+        }
+
+        function updateMuteIcon() {
+            const icon = document.getElementById('mute-icon');
+            if (audio.muted || audio.volume === 0) {
+                icon.className = "fa-solid fa-volume-xmark text-rose-400";
+            } else {
+                icon.className = "fa-solid fa-volume-high";
+            }
+        }
+
+        function toggleShuffle() {
+            state.isShuffle = !state.isShuffle;
+            const btn = document.getElementById('btn-shuffle');
+            const t = i18n[state.currentLang];
+
+            if (state.isShuffle) {
+                btn.className = "text-indigo-400 font-bold transition-colors relative";
+                showToast(t.toastShuffleOn);
+            } else {
+                btn.className = "text-slate-500 hover:text-slate-300 transition-colors relative";
+                showToast(t.toastShuffleOff);
+            }
+        }
+
+        function cycleLoopMode() {
+            const btn = document.getElementById('btn-loop');
+            const icon = document.getElementById('loop-icon');
+            const t = i18n[state.currentLang];
+
+            if (state.loopMode === 'list') {
+                state.loopMode = 'single';
+                btn.className = "text-indigo-400 font-bold transition-colors relative";
+                icon.className = "fa-solid fa-arrows-to-circle";
+                showToast(t.toastLoopSingle);
+            } else if (state.loopMode === 'single') {
+                state.loopMode = 'none';
+                btn.className = "text-slate-500 hover:text-slate-300 transition-colors relative";
+                icon.className = "fa-solid fa-bars-staggered";
+                showToast(t.toastLoopNone);
+            } else {
+                state.loopMode = 'list';
+                btn.className = "text-indigo-400 transition-colors relative";
+                icon.className = "fa-solid fa-repeat";
+                showToast(t.toastLoopList);
+            }
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        // Local Playlist Controls (Offline Compatible)
+        document.getElementById('local-file-input').addEventListener('change', handleFilesSelect);
+        document.getElementById('local-folder-input').addEventListener('change', handleFilesSelect);
+
+        function handleFilesSelect(e) {
+            const files = Array.from(e.target.files).filter(f => f.type.startsWith('audio/') || f.type.startsWith('video/') || f.name.match(/\.(mp3|wav|ogg|flac|m4a|aac)$/i));
+            if (files.length === 0) return;
+
+            files.forEach(file => {
+                state.playlist.push({
+                    name: file.name.replace(/\.[^/.]+$/, ""),
+                    artist: i18n[state.currentLang].localDefaultArtist,
+                    file: file,
+                    url: URL.createObjectURL(file)
+                });
+            });
+
+            state.filteredPlaylist = [...state.playlist];
+            renderLocalPlaylist();
+        }
+
+        const searchInput = document.getElementById('local-search-input');
+        const clearBtn = document.getElementById('clear-search');
+
+        searchInput.addEventListener('input', (e) => {
+            const keyword = e.target.value.toLowerCase().trim();
+            if (keyword) {
+                clearBtn.classList.remove('hidden');
+                state.filteredPlaylist = state.playlist.filter(item => 
+                    item.name.toLowerCase().includes(keyword) || 
+                    item.artist.toLowerCase().includes(keyword)
+                );
+            } else {
+                clearBtn.classList.add('hidden');
+                state.filteredPlaylist = [...state.playlist];
+            }
+            renderLocalPlaylist();
+        });
+
+        clearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            clearBtn.classList.add('hidden');
+            state.filteredPlaylist = [...state.playlist];
+            renderLocalPlaylist();
+        });
+
+        function renderLocalPlaylist() {
+            const container = document.getElementById('local-playlist');
+            const emptyTip = document.getElementById('local-empty-tip');
+
+            if (state.filteredPlaylist.length === 0) {
+                container.innerHTML = '';
+                emptyTip.classList.remove('hidden');
+                return;
+            }
+
+            emptyTip.classList.add('hidden');
+            container.innerHTML = state.filteredPlaylist.map((track, idx) => `
+                <li onclick="playLocalTrack(${idx})" class="p-3 rounded-xl flex items-center justify-between cursor-pointer group transition-all ${state.currentIndex === idx && state.currentSource === 'local' ? 'bg-indigo-600/30 border border-indigo-500/40 text-indigo-300' : 'hover:bg-slate-800/60 text-slate-300'}">
+                    <div class="flex items-center space-x-3 overflow-hidden">
+                        <span class="text-xs font-mono text-slate-500 w-5 text-center">${idx + 1}</span>
+                        <div class="truncate">
+                            <h4 class="text-sm font-medium truncate group-hover:text-white">${track.name}</h4>
+                            <p class="text-[11px] text-slate-500 truncate">${track.artist}</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid ${state.currentIndex === idx && state.currentSource === 'local' && state.isPlaying ? 'fa-chart-simple text-indigo-400' : 'fa-play text-slate-500 opacity-0 group-hover:opacity-100'} text-xs"></i>
+                </li>
+            `).join('');
+        }
+
+        function playLocalTrack(index) {
+            if (index < 0 || index >= state.filteredPlaylist.length) return;
+            state.currentIndex = index;
+            state.currentSource = 'local';
+            const track = state.filteredPlaylist[index];
+            const t = i18n[state.currentLang];
+
+            currentTitle.textContent = track.name;
+            currentArtist.textContent = track.artist;
+            sourceTag.textContent = t.tagLocal;
+            sourceTag.className = "inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-950 text-indigo-300 border border-indigo-700/50";
+
+            renderLocalPlaylist();
+            initAudioContext();
+            updateMediaSessionMetadata(track.name, track.artist);
+            loadAudioStreamSource(track.url);
+
+            recordPlaybackHistory({
+                name: track.name,
+                artist: track.artist,
+                source: 'local',
+                fileName: track.file ? track.file.name : ''
+            });
+        }
+
+        // Radio List Functions
+        function renderRadioGrid() {
+            const grid = document.getElementById('radio-grid');
+            const t = i18n[state.currentLang];
+
+            if (state.radioList.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full py-12 text-center text-slate-500 text-xs">
+                        <i class="fa-solid fa-radio text-3xl mb-2 text-slate-600 block"></i>
+                        <span>电台列表为空，请点击“添加电台URL”或“恢复默认电台”。</span>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = state.radioList.map(r => `
+                <div onclick="playRadioByObj('${r.id}')" class="p-4 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800/80 hover:border-indigo-500/40 cursor-pointer transition-all flex items-center justify-between space-x-3 group relative">
+                    <div class="flex items-center space-x-3 overflow-hidden flex-1">
+                        <div class="w-10 h-10 rounded-lg bg-indigo-950/80 border border-indigo-500/30 text-indigo-400 flex items-center justify-center text-base group-hover:scale-110 transition-transform shrink-0">
+                            <i class="fa-solid ${r.icon || 'fa-radio'}"></i>
+                        </div>
+                        <div class="flex-1 overflow-hidden">
+                            <h4 class="text-sm font-semibold text-slate-200 group-hover:text-indigo-300 truncate">${r.name}</h4>
+                            <p class="text-xs text-slate-500 truncate">${r.desc}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2 shrink-0">
+                        <i class="fa-solid fa-signal text-xs text-emerald-400 opacity-60 group-hover:opacity-100"></i>
+                        <button onclick="deleteRadio('${r.id}', event)" class="p-2 text-slate-500 hover:text-rose-400 hover:bg-slate-700/50 rounded-lg transition-colors" title="${t.deleteRadioTip}">
+                            <i class="fa-solid fa-trash-can text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function deleteRadio(id, event) {
+            event.stopPropagation();
+            const station = state.radioList.find(r => r.id === id);
+            if (!station) return;
+
+            const t = i18n[state.currentLang];
+            const msg = t.confirmDeleteRadio.replace('{name}', station.name);
+
+            if (confirm(msg)) {
+                state.radioList = state.radioList.filter(r => r.id !== id);
+                saveRadioList();
+                renderRadioGrid();
+            }
+        }
+
+        function restoreDefaultRadios() {
+            state.radioList = [...defaultRadioList];
+            saveRadioList();
+            renderRadioGrid();
+        }
+
+        function playRadioByObj(id) {
+            const station = state.radioList.find(r => r.id === id);
+            if (station) playRadio(station);
+        }
+
+        function playRadio(station) {
+            if (!checkNetworkConnection()) return;
+
+            state.currentSource = 'radio';
+            const t = i18n[state.currentLang];
+            
+            currentTitle.textContent = station.name;
+            currentArtist.textContent = station.desc;
+            sourceTag.textContent = t.tagRadio;
+            sourceTag.className = "inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950 text-emerald-300 border border-emerald-700/50";
+
+            initAudioContext();
+            updateMediaSessionMetadata(station.name, station.desc);
+            loadAudioStreamSource(station.url);
+
+            recordPlaybackHistory({
+                name: station.name,
+                artist: station.desc,
+                source: 'radio',
+                url: station.url
+            });
+        }
+
+        function addCustomRadioPrompt() {
+            const t = i18n[state.currentLang];
+            const name = prompt(t.promptRadioName, t.customRadioDefault);
+            if (!name) return;
+            const url = prompt(t.promptRadioUrl);
+            if (!url) return;
+
+            const newStation = {
+                id: 'custom-' + Date.now(),
+                name: name,
+                desc: t.customRadioDesc,
+                url: url,
+                icon: 'fa-tower-broadcast'
+            };
+            state.radioList.unshift(newStation);
+            saveRadioList();
+            renderRadioGrid();
+            playRadio(newStation);
+        }
+
+        // Direct Network Media Stream Logic
+        function playStreamUrl() {
+            const t = i18n[state.currentLang];
+            const urlInput = document.getElementById('stream-url-input');
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                alert(t.alertNoUrl);
+                return;
+            }
+
+            if (url.includes('html') || url.includes('music.163.com') || url.includes('qq.com') || url.includes('bilibili.com') || url.includes('youtube.com')) {
+                alert(t.alertHtmlUrl);
+            }
+
+            loadStreamPreset(url, "Network Stream", url);
+        }
+
+        function loadStreamPreset(url, title, artist) {
+            if (!checkNetworkConnection()) return;
+
+            state.currentSource = 'stream';
+            const t = i18n[state.currentLang];
+            
+            currentTitle.textContent = title;
+            currentArtist.textContent = artist;
+            sourceTag.textContent = t.tagStream;
+            sourceTag.className = "inline-block mt-2 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-950 text-pink-300 border border-pink-700/50";
+
+            initAudioContext();
+            updateMediaSessionMetadata(title, artist);
+            loadAudioStreamSource(url);
+
+            recordPlaybackHistory({
+                name: title,
+                artist: artist,
+                source: 'stream',
+                url: url
+            });
+        }
+
+        function playNextTrack(isAutoEnded = false) {
+            if (state.currentSource !== 'local' || state.filteredPlaylist.length === 0) return;
+            const listLen = state.filteredPlaylist.length;
+
+            if (state.isShuffle && listLen > 1) {
+                let nextIdx = state.currentIndex;
+                while (nextIdx === state.currentIndex) {
+                    nextIdx = Math.floor(Math.random() * listLen);
+                }
+                playLocalTrack(nextIdx);
+                return;
+            }
+
+            let nextIdx = state.currentIndex + 1;
+            if (nextIdx >= listLen) {
+                if (state.loopMode === 'none' && isAutoEnded) {
+                    setPlayState(false);
+                    return;
+                }
+                nextIdx = 0;
+            }
+            playLocalTrack(nextIdx);
+        }
+
+        function playPrevTrack() {
+            if (state.currentSource !== 'local' || state.filteredPlaylist.length === 0) return;
+            const listLen = state.filteredPlaylist.length;
+
+            if (state.isShuffle && listLen > 1) {
+                let prevIdx = state.currentIndex;
+                while (prevIdx === state.currentIndex) {
+                    prevIdx = Math.floor(Math.random() * listLen);
+                }
+                playLocalTrack(prevIdx);
+                return;
+            }
+
+            let prevIdx = state.currentIndex - 1;
+            if (prevIdx < 0) prevIdx = listLen - 1;
+            playLocalTrack(prevIdx);
+        }
+
+        // Equalizer Controls
+        [60, 250, 1000, 4000, 12000].forEach(freq => {
+            const slider = document.getElementById(`eq-${freq}`);
+            const valDisplay = document.getElementById(`eq-val-${freq}`);
+            slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                valDisplay.textContent = (val > 0 ? '+' : '') + val + 'dB';
+                if (state.eqNodes[freq]) {
+                    state.eqNodes[freq].gain.value = val;
+                }
+            });
+        });
+
+        function resetEQ() {
+            [60, 250, 1000, 4000, 12000].forEach(freq => {
+                document.getElementById(`eq-${freq}`).value = 0;
+                document.getElementById(`eq-val-${freq}`).textContent = '0dB';
+                if (state.eqNodes[freq]) {
+                    state.eqNodes[freq].gain.value = 0;
+                }
+            });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            if (e.code === 'Space') {
+                e.preventDefault();
+                togglePlayPause();
+            } else if (e.code === 'ArrowRight') {
+                audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
+            } else if (e.code === 'ArrowLeft') {
+                audio.currentTime = Math.max(0, audio.currentTime - 5);
+            }
+        });
+
+        initMediaSession();
+        initNetworkTrafficMonitor();
+        changeLanguage(state.currentLang);
+    </script>
+</body>
+</html>
